@@ -20,8 +20,11 @@ Create a file `MISSION_ANSWERS.md` with your answers to all exercises:
 ## Part 1: Localhost vs Production
 
 ### Exercise 1.1: Anti-patterns found
-1. [Your answer]
-2. [Your answer]
+1. [API key hardcode trong code]
+2. [Không có config management]
+3. [Print thay vì proper logging]
+4. [Không có health check endpoint]
+5. [Port cố định — không đọc từ environment]
 ...
 
 ### Exercise 1.3: Comparison table

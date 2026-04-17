@@ -91,6 +91,17 @@ curl http://localhost:8000/ask -X POST \
   -H "Content-Type: application/json" \
   -d '{"question": "Hello"}'
 ```
+2tmy@aki MINGW64 ~/Desktop/AI_Thuc_Chien/day12_ha-tang-cloud_va_deployment/01-localhost-vs-production/develop (main)
+$ curl http://localhost:8000/ask -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Hello"}'
+{"detail":[{"type":"missing","loc":["query","question"],"msg":"Field required","input":null}]}(.venv) 
+
+2tmy@aki MINGW64 ~/Desktop/AI_Thuc_Chien/day12_ha-tang-cloud_va_deployment/01-localhost-vs-production/production (main)
+$ curl http://localhost:8000/ask -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Hello"}'
+{"question":"Hello","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","model":"gpt-4o-mini"}(.venv)
 
 **Quan sát:** Nó chạy! Nhưng có production-ready không?
 
@@ -166,6 +177,8 @@ curl http://localhost:8000/ask -X POST \
 **Quan sát:** Image size là bao nhiêu?
 ```bash
 docker images my-agent:develop
+IMAGE              ID             DISK USAGE   CONTENT SIZE   EXTRA
+my-agent:develop   69e5d08a4986       1.66GB          424MB    U  
 ```
 
 ###  Exercise 2.3: Multi-stage build
@@ -183,6 +196,11 @@ Build và so sánh:
 ```bash
 docker build -t my-agent:advanced .
 docker images | grep my-agent
+2tmy@aki MINGW64 ~/Desktop/AI_Thuc_Chien/day12_ha-tang-cloud_va_deployment (main)
+$ docker images | grep my-agent
+WARNING: This output is designed for human readability. For machine-readable output, please use --format.
+my-agent:advanced    a0241201630d        236MB         56.6MB        
+my-agent:develop     ff684c4ba251       1.66GB          424MB   U  
 ```
 
 ###  Exercise 2.4: Docker Compose stack
@@ -191,6 +209,21 @@ docker images | grep my-agent
 
 ```bash
 docker compose up
+kết quả:
+agent-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+agent-1  | INFO:     Started parent process [1]
+agent-1  | INFO:     Started server process [9]
+agent-1  | INFO:     Started server process [8]
+agent-1  | INFO:     Waiting for application startup.
+agent-1  | INFO:     Waiting for application startup.
+agent-1  | {"time":"2026-04-17 09:46:23,584","level":"INFO","msg":"Starting agent..."}
+agent-1  | {"time":"2026-04-17 09:46:23,584","level":"INFO","msg":"Starting agent..."}
+agent-1  | {"time":"2026-04-17 09:46:23,684","level":"INFO","msg":"Agent ready"}
+agent-1  | {"time":"2026-04-17 09:46:23,684","level":"INFO","msg":"Agent ready"}
+agent-1  | INFO:     Application startup complete.
+agent-1  | INFO:     Application startup complete.
+agent-1  | INFO:     127.0.0.1:41778 - "GET /health HTTP/1.1" 200 OK
+agent-1  | INFO:     127.0.0.1:44562 - "GET /health HTTP/1.1" 200 OK
 ```
 
 Services nào được start? Chúng communicate thế nào?
@@ -263,11 +296,29 @@ railway variables set AGENT_API_KEY=my-secret-key
 5. Deploy:
 ```bash
 railway up
+Build time: 114.16 seconds
+Deploy complete
+
+====================
+Starting Healthcheck
+====================
+
+Retry window: 30s
+
+[1/1] Healthcheck succeeded!
+Starting Container
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     100.64.0.2:37743 - "GET /health HTTP/1.1" 200 OK
 ```
 
 6. Get public URL:
 ```bash
 railway domain
+Service Domain created:
+🚀 https://ntt-production-5ce2.up.railway.app
 ```
 
 **Nhiệm vụ:** Test public URL với curl hoặc Postman.
