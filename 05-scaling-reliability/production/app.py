@@ -125,6 +125,12 @@ class ChatRequest(BaseModel):
 # Endpoints
 # ──────────────────────────────────────────────────────────
 
+@app.post("/ask")
+async def ask_endpoint(body: ChatRequest):
+    """Alias của /chat — dùng cho load balancing demo."""
+    return await chat(body)
+
+
 @app.post("/chat")
 async def chat(body: ChatRequest):
     """
@@ -217,4 +223,4 @@ def ready():
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=port)

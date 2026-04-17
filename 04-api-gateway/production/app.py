@@ -1,202 +1,249 @@
-"""
-ADVANCED — Full Security Stack
-
-Kết hợp:
-  ✅ JWT Authentication
-  ✅ Role-based access (user / admin)
-  ✅ Rate limiting (sliding window)
-  ✅ Cost guard (daily budget)
-  ✅ Input validation
-  ✅ Security headers
-
-Chạy:
-    python app.py
-
-Lấy token:
-    curl -X POST http://localhost:8000/auth/token \\
-         -H "Content-Type: application/json" \\
-         -d '{"username": "student", "password": "demo123"}'
-
-Dùng token:
-    curl -H "Authorization: Bearer <token>" \\
-         -X POST http://localhost:8000/ask \\
-         -H "Content-Type: application/json" \\
-         -d '{"question": "what is docker?"}'
-"""
 import os
 import time
+import json
+import uuid
+import signal
 import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
-
-from fastapi import FastAPI, Depends, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from auth import verify_token, authenticate_user, create_token
-from rate_limiter import rate_limiter_user, rate_limiter_admin
-from cost_guard import cost_guard
 from utils.mock_llm import ask
 
-logging.basicConfig(level=logging.INFO)
+# Redis
+import redis
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "20"))
+PORT = int(os.getenv("PORT", "8000"))
+INSTANCE_ID = os.getenv("INSTANCE_ID", f"instance-{uuid.uuid4().hex[:6]}")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 START_TIME = time.time()
+_is_ready = False
+_is_shutting_down = False
+_in_flight_requests = 0
+
+r = redis.from_url(REDIS_URL, decode_responses=True)
+
+
+class ChatRequest(BaseModel):
+    question: str
+    session_id: str | None = None
+
+
+def session_key(session_id: str) -> str:
+    return f"session:{session_id}"
+
+
+def save_session(session_id: str, data: dict) -> None:
+    r.setex(session_key(session_id), SESSION_TTL_SECONDS, json.dumps(data))
+
+
+def load_session(session_id: str) -> dict:
+    raw = r.get(session_key(session_id))
+    return json.loads(raw) if raw else {}
+
+
+def append_to_history(session_id: str, role: str, content: str) -> list[dict]:
+    session = load_session(session_id)
+    history = session.get("history", [])
+    history.append(
+        {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+    history = history[-MAX_HISTORY_MESSAGES:]
+    session["history"] = history
+    save_session(session_id, session)
+    return history
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Security layer initialized")
+    global _is_ready, _is_shutting_down
+
+    logger.info(f"Starting instance {INSTANCE_ID}")
+    logger.info("Connecting to Redis...")
+    r.ping()
+    logger.info("Redis connected")
+    _is_ready = True
+    _is_shutting_down = False
+    logger.info("Agent is ready")
+
     yield
-    logger.info("Shutdown")
+
+    logger.info("Graceful shutdown initiated...")
+    _is_ready = False
+    _is_shutting_down = True
+
+    timeout = 30
+    waited = 0
+    while _in_flight_requests > 0 and waited < timeout:
+        logger.info(f"Waiting for {_in_flight_requests} in-flight requests...")
+        time.sleep(1)
+        waited += 1
+
+    logger.info("Shutdown complete")
 
 
 app = FastAPI(
-    title="Agent — Full Security Stack",
-    version="3.0.0",
+    title="Stateless Agent with Redis",
+    version="5.0.0",
     lifespan=lifespan,
-    # ✅ Ẩn /docs trong production
-    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
 )
 
-# ──────────────────────────────────────────────────────────
-# Security Middleware
-# ──────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
 @app.middleware("http")
-async def security_headers(request: Request, call_next):
-    """Thêm security headers vào mọi response."""
-    response: Response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Ẩn server info
-    response.headers.pop("server", None)
-    return response
+async def track_requests(request, call_next):
+    global _in_flight_requests
+
+    if _is_shutting_down:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Server is shutting down"},
+        )
+
+    _in_flight_requests += 1
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        _in_flight_requests -= 1
 
 
-# ──────────────────────────────────────────────────────────
-# Request/Response Models
-# ──────────────────────────────────────────────────────────
-class AskRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=1000)
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-# ──────────────────────────────────────────────────────────
-# Auth Endpoints
-# ──────────────────────────────────────────────────────────
-
-@app.post("/auth/token")
-def login(body: LoginRequest):
-    """
-    Public endpoint. Đổi username/password lấy JWT token.
-    Token hết hạn sau 60 phút.
-    """
-    user = authenticate_user(body.username, body.password)
-    token = create_token(user["username"], user["role"])
+@app.get("/")
+def root():
     return {
-        "access_token": token,
-        "token_type": "bearer",
-        "expires_in_minutes": 60,
-        "hint": f"Include in header: Authorization: Bearer {token[:20]}...",
+        "message": "Stateless Agent with Redis session storage",
+        "instance_id": INSTANCE_ID,
     }
 
-
-# ──────────────────────────────────────────────────────────
-# Protected Agent Endpoint
-# ──────────────────────────────────────────────────────────
-
-@app.post("/ask")
-async def ask_agent(
-    body: AskRequest,
-    request: Request,
-    user: dict = Depends(verify_token),  # ✅ JWT required
-):
-    """
-    Protected endpoint. Yêu cầu:
-    1. Valid JWT token
-    2. Trong rate limit
-    3. Trong budget
-    """
-    username = user["username"]
-    role = user["role"]
-
-    # ✅ Rate limiting — theo role
-    limiter = rate_limiter_admin if role == "admin" else rate_limiter_user
-    rate_info = limiter.check(username)
-
-    # ✅ Cost check trước khi gọi LLM
-    cost_guard.check_budget(username)
-
-    # Gọi LLM (mock)
-    response_text = ask(body.question)
-
-    # ✅ Ghi nhận usage (mock token count)
-    input_tokens = len(body.question.split()) * 2
-    output_tokens = len(response_text.split()) * 2
-    usage = cost_guard.record_usage(username, input_tokens, output_tokens)
-
-    return {
-        "question": body.question,
-        "answer": response_text,
-        "usage": {
-            "requests_remaining": rate_info["remaining"],
-            "budget_remaining_usd": usage.total_cost_usd,
-        },
-    }
-
-
-@app.get("/me/usage")
-def my_usage(user: dict = Depends(verify_token)):
-    """Xem usage của bản thân."""
-    return cost_guard.get_usage(user["username"])
-
-
-@app.get("/admin/stats")
-def admin_stats(user: dict = Depends(verify_token)):
-    """Admin only: xem tổng stats."""
-    if user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
-    return {
-        "total_users": "N/A (in-memory demo)",
-        "global_cost_usd": cost_guard._global_cost,
-        "global_budget_usd": cost_guard.global_daily_budget_usd,
-    }
-
-
-# ──────────────────────────────────────────────────────────
-# Health Checks (public)
-# ──────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
     return {
         "status": "ok",
+        "instance_id": INSTANCE_ID,
         "uptime_seconds": round(time.time() - START_TIME, 1),
-        "security": "JWT + RateLimit + CostGuard",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
+@app.get("/ready")
+def ready():
+    if not _is_ready or _is_shutting_down:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "instance_id": INSTANCE_ID},
+        )
+
+    try:
+        r.ping()
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not ready", "detail": "Redis unavailable"},
+        )
+
+    return {
+        "status": "ready",
+        "instance_id": INSTANCE_ID,
+        "in_flight_requests": _in_flight_requests,
+    }
+
+
+@app.post("/ask")
+async def ask_agent(body: ChatRequest):
+    if not _is_ready:
+        raise HTTPException(status_code=503, detail="Agent not ready")
+
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question must not be empty")
+
+    session_id = body.session_id or str(uuid.uuid4())
+
+    append_to_history(session_id, "user", question)
+
+    session = load_session(session_id)
+    history = session.get("history", [])
+
+    # In real app, you would pass history into the LLM prompt.
+    answer = ask(question)
+
+    append_to_history(session_id, "assistant", answer)
+
+    updated = load_session(session_id)
+    updated_history = updated.get("history", [])
+
+    return {
+        "session_id": session_id,
+        "question": question,
+        "answer": answer,
+        "history_count": len(updated_history),
+        "recent_history": updated_history[-4:],
+        "served_by": INSTANCE_ID,
+        "storage": "redis",
+    }
+
+
+@app.get("/chat/{session_id}/history")
+def get_history(session_id: str):
+    session = load_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+
+    history = session.get("history", [])
+    return {
+        "session_id": session_id,
+        "messages": history,
+        "count": len(history),
+        "served_by": INSTANCE_ID,
+    }
+
+
+@app.delete("/chat/{session_id}")
+def delete_session(session_id: str):
+    r.delete(session_key(session_id))
+    return {
+        "deleted": session_id,
+        "served_by": INSTANCE_ID,
+    }
+
+
+def shutdown_handler(signum, frame):
+    global _is_ready, _is_shutting_down
+    logger.info(f"Received signal {signum}")
+    _is_ready = False
+    _is_shutting_down = True
+
+
+signal.signal(signal.SIGTERM, shutdown_handler)
+signal.signal(signal.SIGINT, shutdown_handler)
+
+
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    print("\n=== Demo credentials ===")
-    print("  student / demo123  (10 req/min, $1/day budget)")
-    print("  teacher / teach456 (100 req/min, $1/day budget)")
-    print(f"\nDocs: http://localhost:{port}/docs\n")
-    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=PORT,
+        timeout_graceful_shutdown=30,
+    )

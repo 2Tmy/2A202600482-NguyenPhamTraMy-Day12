@@ -327,11 +327,21 @@ Test:
 ```bash
 # Health check
 curl http://student-agent-domain/health
-
+(.venv) PS C:\Users\2tmy\Desktop\AI_Thuc_Chien\day12_ha-tang-cloud_va_deployment\03-cloud-deployment\railway> curl https://ntt-production-5ce2.up.railway.app
+{"message":"AI Agent running on Railway!","docs":"/docs","health":"/health"}
 # Agent endpoint
-curl http://studen-agent-domain/ask -X POST \
+curl http://https://ntt-production-5ce2.up.railway.app/ask -X POST \
   -H "Content-Type: application/json" \
   -d '{"question": ""}'
+
+  (.venv) PS C:\Users\2tmy\Desktop\AI_Thuc_Chien\day12_ha-tang-cloud_va_deployment\03-cloud-deployment\railway> Invoke-RestMethod -Uri "https://ntt-production-5ce2.up.railway.app/ask" `
+>>   -Method POST `
+>>   -ContentType "application/json" `
+>>   -Body '{"question":"Hello"}'
+
+question answer                                                                                           platform
+-------- ------                                                                                           --------
+Hello    Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic. Railway
 ```
 
 ###  Exercise 3.2: Deploy Render (15 phút)
@@ -447,13 +457,38 @@ Test:
 # Gọi liên tục 20 lần
 for i in {1..20}; do
   curl http://localhost:8000/ask -X POST \
-    -H "Authorization: Bearer $TOKEN" \
+    -H "Authorization: Bearer $eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZWFjaGVyIiwicm9sZSI6ImFkbWluIiwiaWF0IjoxNzc2NDMyNzQxLCJleHAiOjE3NzY0MzYzNDF9.hjnJNE0PQQLEsaXXO3392gmCp8_tQy6HmAU1lfmkYNM" \
     -H "Content-Type: application/json" \
     -d '{"question": "Test '$i'"}'
   echo ""
 done
 ```
-
+output
+2tmy@aki MINGW64 ~/Desktop/AI_Thuc_Chien/day12_ha-tang-cloud_va_deployment/04-api-gateway/production (main)
+$ for i in {1..20}; do   curl http://localhost:8000/ask -X POST     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZWFjaGVyIiwicm9sZSI6ImFkbWluIiwia
+WF0IjoxNzc2NDMyNzQxLCJleHAiOjE3NzY0MzYzNDF9.hjnJNE0PQQLEsaXXO3392gmCp8_tQy6HmAU1lfmkYNM"     -H "Content-Type: application/json"     -d '{"question": "Test '$i'"}';   echo ""; 
+done
+{"question":"Test 1","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":99,"budget_remaining_usd":1.9e-05}}
+{"question":"Test 2","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":98,"budget_remaining_usd":4e-05}}
+{"question":"Test 3","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"requests_remaining":97,"budget_remaining_usd":5.6e-05}}
+{"question":"Test 4","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"requests_remaining":96,"budget_remaining_usd":7.2e-05}}
+{"question":"Test 5","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":95,"budget_remaining_usd":9.3e-05}}
+{"question":"Test 6","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"requests_remaining":94,"budget_remaining_usd":0.000109}}
+{"question":"Test 7","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":93,"budget_remaining_usd":0.000128}}
+{"question":"Test 8","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":92,"budget_remaining_usd":0.000146}}
+{"question":"Test 9","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":91,"budget_remaining_usd":0.000167}}
+{"question":"Test 10","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"requests_remaining":90,"budget_remaining_usd":0.000184}}
+{"question":"Test 11","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":89,"budget_remaining_usd":0.000205}}
+{"question":"Test 12","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":88,"budget_remaining_usd":0.000226}}
+{"question":"Test 13","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":87,"budget_remaining_usd":0.000247}}
+{"question":"Test 14","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":86,"budget_remaining_usd":0.000265}}
+{"question":"Test 15","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":85,"budget_remaining_usd":0.000284}}
+{"question":"Test 16","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":84,"budget_remaining_usd":0.000302}}
+{"question":"Test 17","answer":"Agent đang hoạt động tốt! (mock response) Hỏi thêm câu hỏi đi nhé.","usage":{"requests_remaining":83,"budget_remaining_usd":0.000319}}
+{"question":"Test 18","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":82,"budget_remaining_usd":0.00034}}
+{"question":"Test 19","answer":"Tôi là AI agent được deploy lên cloud. Câu hỏi của bạn đã được nhận.","usage":{"requests_remaining":81,"budget_remaining_usd":0.000358}}
+{"question":"Test 20","answer":"Đây là câu trả lời từ AI agent (mock). Trong production, đây sẽ là response từ OpenAI/Anthropic.","usage":{"requests_remaining":80,"budget_remaining_usd":0.000379}}
+(.venv) 
 Quan sát response khi hit limit.
 
 ###  Exercise 4.4: Cost guard
@@ -601,6 +636,7 @@ curl http://localhost:8000/ask -X POST \
 kill -TERM $PID
 
 # Quan sát: Request có hoàn thành không?
+{"status":"ok","uptime_seconds":118.6,"timestamp":"2026-04-17T14:50:35.680376+00:00"}{"status":"ready","ready":true,"in_flight_requests":1}
 ```
 
 ###  Exercise 5.3: Stateless design
