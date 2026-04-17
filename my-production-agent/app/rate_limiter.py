@@ -3,7 +3,7 @@ import redis
 from fastapi import HTTPException, status
 from app.config import settings # Assuming settings are imported here
 
-r = redis.from_url(settings.REDIS_URL, decode_responses=True)
+#r = redis.from_url(settings.REDIS_URL, decode_responses=True)
 
 def check_rate_limit(user_id: str, limit: int = 100, window_seconds: int = 60):
     """
